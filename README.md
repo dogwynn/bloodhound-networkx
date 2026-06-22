@@ -1,2 +1,9 @@
 # bloodhound-networkx
-Ingest BloodHound data as a NetworkX DiGraph
+
+Tools to ingest BloodHound graph data into a NetworkX graph.
+
+## Install
+
+```
+
+```

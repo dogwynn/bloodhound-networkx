@@ -1,0 +1,31 @@
+[project]
+name = "bloodhound-networkx"
+version = "0.0.1"
+description = "Tools to ingest BloodHound graph data into NetworkX graph"
+authors = [
+    {name = "David O'Gwynn",email = "david_ogwynn@nextstepinnovation.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "toolz",
+    "networkx",
+    "click",
+    "coloredlogs",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/dogwynn/bloodhound-networkx"
+Issues = "https://github.com/dogwynn/bloodhound-networkx/issues"
+
+
+
+
+[tool.poetry]
+packages = [{include = "bloodhound_networkx", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
