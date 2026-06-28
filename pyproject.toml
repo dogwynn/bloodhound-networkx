@@ -1,6 +1,6 @@
 [project]
 name = "bloodhound-networkx"
-version = "0.0.1"
+version = "0.0.2"
 description = "Tools to ingest BloodHound graph data into NetworkX graph"
 authors = [
     {name = "David O'Gwynn",email = "david_ogwynn@nextstepinnovation.com"}
@@ -20,7 +20,8 @@ Homepage = "https://github.com/dogwynn/bloodhound-networkx"
 Issues = "https://github.com/dogwynn/bloodhound-networkx/issues"
 
 
-
+[project.scripts]
+bnx-cli = "bloodhound_networkx.cli.common:bnx_cli"
 
 [tool.poetry]
 packages = [{include = "bloodhound_networkx", from = "src"}]

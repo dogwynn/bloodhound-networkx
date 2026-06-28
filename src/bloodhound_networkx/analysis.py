@@ -1,19 +1,20 @@
 import typing as T
 from pathlib import Path
 import pprint
+import hashlib
 
 import networkx as nx
 
 from .common import new_log
 from .toolz import (
     pipe, json_slurp, merge, mapcat, map, endswith, first, filter, vfilter,
-    curry, concat, concatv,
+    curry, concat, concatv, hash_object,
 )
 
 log = new_log(__name__)
 
-def graph_path(G: nx.MultiDiGraph):
-    return G.nodes['__metadata__']['path']
+def graph_hash(G: nx.MultiDiGraph):
+    return G.nodes['__metadata__']['hash']
 
 @curry
 def ids_by_type(node_type: str, G: nx.MultiGraph):
@@ -22,13 +23,13 @@ def ids_by_type(node_type: str, G: nx.MultiGraph):
         map(first),
         tuple,
     )
-user_ids = ids_by_type('User')
-computer_ids = ids_by_type('Computer')
-group_ids = ids_by_type('Group')
-ou_ids = ids_by_type('OU')
-container_ids = ids_by_type('Container')
-gpo_ids = ids_by_type('GPO')
-domain_ids = ids_by_type('Domain')
+all_user_ids = ids_by_type('User')
+all_computer_ids = ids_by_type('Computer')
+all_group_ids = ids_by_type('Group')
+all_ou_ids = ids_by_type('OU')
+all_container_ids = ids_by_type('Container')
+all_gpo_ids = ids_by_type('GPO')
+all_domain_ids = ids_by_type('Domain')
 
 @curry
 def nodes_by_type(node_type: str, G: nx.MultiDiGraph):
@@ -38,33 +39,19 @@ def nodes_by_type(node_type: str, G: nx.MultiDiGraph):
         filter(None),
         tuple,
     )
-users = nodes_by_type('User')
-computers = nodes_by_type('Computer')
-groups = nodes_by_type('Group')
-ous = nodes_by_type('OU')
-containers = nodes_by_type('Container')
-gpos = nodes_by_type('GPO')
-domains = nodes_by_type('Domain')
-
-def domain_ids(G: nx.MultiGraph):
-    return pipe(
-        G.in_edges('Domain'),
-        map(first),
-        tuple,
-    )
-def domains(G: nx.MultiGraph):
-    return pipe(
-        domain_ids(G),
-        map(G.nodes.get),
-        tuple,
-    )
+all_users = nodes_by_type('User')
+all_computers = nodes_by_type('Computer')
+all_groups = nodes_by_type('Group')
+all_ous = nodes_by_type('OU')
+all_containers = nodes_by_type('Container')
+all_gpos = nodes_by_type('GPO')
+all_domains = nodes_by_type('Domain')
 
 _sids = {}
-
 @curry
-def by_end_digit(end: str, G: nx.MultiDiGraph):
+def id_by_end_digit(end: str, G: nx.MultiDiGraph):
     sid_end = ('-' if not end.startswith('-') else '') + end
-    k = (graph_path(G), sid_end)
+    k = (graph_hash(G), sid_end)
     if k in _sids:
         return _sids[k]
     
@@ -76,25 +63,28 @@ def by_end_digit(end: str, G: nx.MultiDiGraph):
         return sids[0]
     log.error(f'No node in this graph with SID: {sid_end}')
 
-domain_admin_id = by_end_digit('512')
-def domain_admins(G: nx.MultiDiGraph):
-    return G.nodes[domain_admin_id(G)]
+@curry
+def node_by_end_digit(end: str, G: nx.MultiDiGraph):
+    return G.nodes[id_by_end_digit(end, G)]
 
-domain_users_id = by_end_digit('513')
-def domain_users(G: nx.MultiDiGraph):
-    return G.nodes[domain_users_id(G)]
+domain_admins_id = id_by_end_digit('512')
+domain_admins_node = node_by_end_digit('512')
 
-users_id = by_end_digit('545')
-def users(G: nx.MultiDiGraph):
-    return G.nodes[users_id(G)]
+administrators_id = id_by_end_digit('544')
+administrators_node = node_by_end_digit('544')
 
-authorized_users_id = by_end_digit('11')
-def authorized_users(G: nx.MultiDiGraph):
-    return G.nodes[authorized_users_id(G)]
+domain_users_id = id_by_end_digit('513')
+domain_users_node = node_by_end_digit('513')
+
+users_id = id_by_end_digit('545')
+users_node = node_by_end_digit('545')
+
+authorized_users_id = id_by_end_digit('11')
+authorized_users_node = node_by_end_digit('11')
 
 
 
-abuse_rights = set([
+abuse_rights = {
     'Owns', 'GenericAll', 'GenericWrite', 'WriteOwner', 'WriteDacl', 'MemberOf',
     'ForceChangePassword', 'AllExtendedRights', 'AddMember', 'AllowedToDelegate',
     'CoerceToTGT', 'AllowedToAct', 'AdminTo', 'CanPSRemote', 'CanRDP',
@@ -108,7 +98,7 @@ abuse_rights = set([
     'WriteOwnerLimitedRights', 'OwnsLimitedRights', 'CoerceAndRelayNTLMToLDAP',
     'CoerceAndRelayNTLMToLDAPS', 'HasTrustKeys', 'DCFor', 'SameForestTrust',
     'SpoofSIDHistory', 'AbuseTGTDelegation'
-])
+}
 
 @curry
 def rights_edge_types(rights: T.Sequence[T.Tuple[str, str, str]]):
@@ -116,16 +106,35 @@ def rights_edge_types(rights: T.Sequence[T.Tuple[str, str, str]]):
 
 abuse_rights_edge_types = rights_edge_types(abuse_rights)
 
-def domain_users_to_any_user_edges(G: nx.MultiDiGraph):
-    sG = nx.edge_subgraph(G, pipe(
+def abuse_subgraph(G: nx.MultiDiGraph):
+    return nx.edge_subgraph(G, pipe(
         G.edges,
         vfilter(lambda a, b, type: type in abuse_rights_edge_types),
     ))
+
+def domain_users_to_any_user_paths(G: nx.MultiDiGraph):
+    sG = abuse_subgraph(G)
     return pipe(
         nx.all_simple_edge_paths(sG, domain_users_id(G), 'User'),
         map(lambda P: tuple(P)[:-1]),
         tuple,
     )
+
+Edge = T.Tuple[str, str, str]
+
+@curry
+def edge_to_str(G: nx.MultiDiGraph, edge: Edge) -> str:
+    a, b, etype = edge
+    return f'{G.nodes[a]["name"]} --[{etype}]-> {G.nodes[b]["name"]}'
+
+@curry
+def edges_to_str(G: nx.MultiDiGraph, edges: T.Iterable[Edge]):
+    return pipe(
+        edges,
+        map(edge_to_str(G)),
+        '\n'.join,
+    )
+        
 
 @curry
 def node_to_node_with_edge_1(n_type_a: str, n_type_b: str, e_type: str, 

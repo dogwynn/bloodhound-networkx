@@ -1,16 +1,20 @@
 import io
 import collections
+from datetime import datetime
 from pathlib import Path
 from argparse import ArgumentError
 import random
 import functools
 import builtins
+import typing as T
 from typing import (
-    Union, Optional, Callable, Any, Hashable,
+    Union, Optional, Callable, Any, Hashable, Iterable,
 )
 import json
 import gzip
 import bz2
+import hashlib
+from collections import Counter
 
 from toolz.curried import (
     accumulate, apply, assoc, assoc_in, comp,
@@ -104,6 +108,8 @@ def split(sep: Optional[str] = None, value: Optional[str] = None,  maxsplit=-1):
 
     >>> split(None, 'a b') == ['a', 'b']
     True
+    >>> split("|", 'a|b') == ['a', 'b']
+    True
     >>> pipe('a b', split()) == ['a', 'b']
     True
     >>> pipe('a,b', split(','))
@@ -132,9 +138,15 @@ def split(sep: Optional[str] = None, value: Optional[str] = None,  maxsplit=-1):
     return splitter
 
 @curry
-def splitlines(value: streamable, keepends=False):
+def splitlines(value: streamable, keepends=False) -> T.Generator[str]:
     '''
     In-line string splitlines function. Stream-safe.
+
+    >>> list(splitlines(None, 'a\nb')) == ['a', 'b']
+    True
+    >>> pipe('a\nb', splitlines, list) == ['a', 'b']
+    True
+
     '''
     for line in to_io(value):
         if keepends:
@@ -193,18 +205,19 @@ def keys(d: dict):
 # ----------------------------------------------------------------------
 
 @curry
-def vcall(func, value):
+def vcall(func: T.Callable, value: T.Sequence[T.Any]):
     '''Variadic call
 
     Example:
 
     >>> pipe([1, 2], vcall(lambda a, b: a + b))
     3
+    
     '''
     return func(*value)
 
 @curry
-def vmap(func, seq):
+def vmap(func: T.Callable, seq: T.Iterable[T.Sequence[T.Any]]):
     '''Variadic map
 
     Example:
@@ -218,7 +231,7 @@ def vmap(func, seq):
     )
 
 @curry
-def map_t(func, values):
+def map_t(func: T.Callable, values):
     return pipe(
         values,
         map(func),
@@ -243,7 +256,7 @@ def mapget(key, seq, *, default=None):
 mget = mapget
 
 @curry
-def vfilter(func, seq):
+def vfilter(func: T.Callable, seq):
     '''Variadic filter
 
     Example:
@@ -257,7 +270,7 @@ def vfilter(func, seq):
     )
 
 @curry
-def vmapcat(func, seq):
+def vmapcat(func: T.Callable, seq):
     '''Variadic mapcat
 
     Example:
@@ -419,3 +432,142 @@ def cassoc(key: Hashable, value: Any, d: dict, factory=dict):
     return assoc(d, key, value, factory)
 set_key = cassoc
 
+def most_common(obj: Union[Counter, Iterable[Hashable]]):
+    match obj:
+        case counter if isinstance(counter, Counter):
+            return counter.most_common()
+        case iterable:
+            return pipe(
+                iterable,
+                Counter,
+                lambda c: c.most_common(),
+            )
+
+def is_str(v):
+    '''Is this a string object
+    '''
+    return isinstance(v, str)
+is_not_string = complement(is_str)
+
+def is_int(value):
+    if type(value) is float:
+        return False
+    try:
+        int(value)
+    except ValueError:
+        return False
+    except TypeError:
+        return False
+    return True
+
+@curry
+@functools.wraps(builtins.sorted)
+def sorted(iterable, **kw):
+    '''Curried sorted
+
+    Examples:
+
+    >>> pipe([5, 2, 6], sorted)
+    [2, 5, 6]
+    '''
+    return builtins.sorted(iterable, **kw)
+
+@curry
+def sort_by(func, iterable, **kw):
+    '''Sort iterable by key=func
+
+    Examples:
+
+    >>> pipe([{'a': 1}, {'a': 8}, {'a': 2}], sort_by(get('a')))
+    [{'a': 1}, {'a': 2}, {'a': 8}]
+    '''
+    if is_str(func) or is_int(func):
+        func = get(func)
+
+    return builtins.sorted(iterable, key=func, **kw)
+
+def hash_content(hasher: Callable):
+    def do_hash(content: Union[str, bytes]):
+        if is_str(content):
+            content = content.encode()
+        return pipe(
+            content,
+            hasher,
+            lambda h: h.hexdigest(),
+        )
+    return do_hash
+md5 = hash_content(hashlib.md5)
+sha1 = hash_content(hashlib.sha1)
+sha256 = hash_content(hashlib.sha256)
+sha512 = hash_content(hashlib.sha512)
+
+def is_dict(d):
+    return isinstance(d, collections.abc.Mapping)
+is_not_dict = complement(is_dict)
+
+def is_indexable(s):
+    return hasattr(s, '__getitem__')
+
+def is_seq(s):
+    return (
+        isinstance(s, collections.abc.Iterable)
+        and                     # noqa
+        (not is_dict(s))
+        and                     # noqa
+        (not isinstance(s, (str, bytes)))
+    )
+is_not_seq = complement(is_seq)
+
+def is_float(value):
+    try:
+        float(value)
+    except ValueError:
+        return False
+    except TypeError:
+        return False
+    return True
+
+def is_numeric(value):
+    if is_float(value) or is_int(value):
+        return True
+    return False
+
+def to_builtins(obj):
+    '''Attempt to convert object with non-builtin objects to builtin types
+
+    '''
+    match obj:
+        case dobj if is_dict(obj):
+            return pipe(
+                dobj.items(),
+                vmap(lambda k, v: (
+                    to_builtins(k),
+                    to_builtins(v)
+                )),
+                dict,
+            )
+        case seq if is_seq(seq):
+            return pipe(seq, map(to_builtins), list)
+
+    t_map = [
+        (is_str, str),
+        ((lambda o: isinstance(o, datetime)), str),
+        ((lambda o: isinstance(o, Path)), str),
+        (is_int, int),
+        (is_float, float),
+    ]
+
+    for test_f, transform_f in t_map:
+        if test_f(obj):
+            return transform_f(obj)
+    return obj
+
+
+@curry
+def hash_object(obj: Any, hash_func=md5):
+    return pipe(
+        obj,
+        to_builtins,
+        json_dumps(sort_keys=True),
+        hash_func,
+    )

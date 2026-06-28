@@ -1,10 +1,14 @@
+import typing as T
 from pathlib import Path
+import pickle
+import gzip
 
 import networkx as nx
 
 from .common import new_log
 from .toolz import (
-    pipe, mapcat, groupby, valmap, first, merge, map, endswith, filter,
+    pipe, mapcat, groupby, valmap, first, merge, map, endswith, filter, md5,
+    json_dumps, concatv, do,
 )
 from . import bloodhound
 
@@ -26,15 +30,11 @@ def edges_to_dod(edges):
                 )
     return dod
 
-def to_digraph(path: str | Path):
-    nodes = pipe(
-        path,
-        bloodhound.parse_directory,
-        tuple,
-    )
+def to_digraph(bh_elements: T.Iterable[dict]):
+    bh_elements = tuple(bh_elements)
 
     graph: nx.MultiDiGraph = pipe(
-        nodes,
+        bh_elements,
         mapcat(bloodhound.object_edges),
         edges_to_dod,
         lambda dod: nx.from_dict_of_dicts(
@@ -60,15 +60,34 @@ def to_digraph(path: str | Path):
         )
 
     node_attrs = pipe(
-        nodes,
+        bh_elements,
         map(bloodhound.object_properties),
         groupby('sid'),
         valmap(first),
     )
     nx.set_node_attributes(graph, node_attrs)
 
+    g_hash = pipe(
+        concatv(sorted(graph.nodes), sorted(graph.edges)),
+        tuple,
+        json_dumps,
+        md5,
+    )
     graph.add_node('__metadata__', **{
-        'path': Path(path).expanduser().resolve(),
+        'hash': g_hash,
     })
 
     return graph
+
+def pickle_path(output_directory: Path, output_stem: str):
+    return Path(output_directory) / f'{output_stem}.pkl.gz'
+
+def pickle_graph(output_directory: Path, output_stem: str, G: nx.MultiDiGraph):
+    output_path = pickle_path(output_directory, output_stem)
+    with gzip.open(output_path, 'wb') as gz_wfp:
+        pickle.dump(G, gz_wfp)
+
+def unpickle_graph(path: Path) -> nx.MultiDiGraph:
+    with gzip.open(path) as gz_rfp:
+        return pickle.load(gz_rfp)
+    

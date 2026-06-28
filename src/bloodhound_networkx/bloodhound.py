@@ -1,3 +1,4 @@
+import typing as T
 from pathlib import Path
 import pprint
 
@@ -55,13 +56,18 @@ def parse_bloodhound_path(path: str | Path):
 
 def object_type(obj: dict):
     return {
-        'users': 'User',
+        'aiacas': 'AIACA',
+        'certtemplates': 'CertTemplate',
         'computers': 'Computer',
-        'groups': 'Group',
-        'ous': 'OU',
         'containers': 'Container',
-        'gpos': 'GPO',
         'domains': 'Domain',
+        'enterprisecas': 'EnterpriseCA',
+        'gpos': 'GPO',
+        'groups': 'Group',
+        'ntauthstores': 'NTAuthStore',
+        'ous': 'OU',
+        'rootcas': 'RootCA',
+        'users': 'User',
     }.get(obj['type'], 'Base')
 
 def object_properties(obj: dict):
@@ -110,6 +116,14 @@ def object_edges(obj: dict):
                     'b': this_sid,
                     'rel': localgroup_sid_to_edge[lg_sid],
                 }
+
+    if 'ContainedBy' in obj and obj['ContainedBy']:
+        c_sid = obj['ContainedBy']['ObjectIdentifier']
+        yield {
+            'a': this_sid,
+            'b': c_sid,
+            'rel': 'MemberOf',
+        }
     
     # groups
     for member in obj.get('Members', []):
@@ -149,17 +163,25 @@ def object_edges(obj: dict):
         }
 
 
+def parse_files(json_paths: T.Sequence[str | Path]):
+    return pipe(
+        json_paths,
+        mapcat(parse_bloodhound_path),
+    )
 
 def parse_directory(path: str | Path):
     path = Path(path).expanduser()
     if not path.exists():
         log.error(
-            f'No data at path: {path}'
+            f"Path does not exist: {path}"
         )
         return
+    json_paths = list(path.glob('*.json'))
+    if not json_paths:
+        log.error(
+            f'No JSON files in directory at {path}'
+        )
 
-    return pipe(
-        path.glob('*.json'),
-        mapcat(parse_bloodhound_path),
-    )
+    return parse_files(json_paths)
+
 
