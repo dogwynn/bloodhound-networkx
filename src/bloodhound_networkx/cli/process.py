@@ -107,13 +107,14 @@ def process(json_paths_or_dir: T.Sequence[str], output_stem: str, output_dir: st
     networkx.pickle_graph(output_dir_path, output_stem, G)
 
 @bnx_cli.command(help='''
-List the AD User objects. Must provide either a path to a persisted graph 
+List the enabled AD User objects. Must provide either a path to a persisted graph 
 (from an earlier process call) or valid JSON paths/dir. By default, will 
-print to stdout unless -o/--output-path is given.
+print to stdout unless -o/--output-path is given. If all users are desired, 
+use the --disabled flag.
 ''')
 @click.argument('json-or-graph', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('-o', '--output-path', help='File path to output user data',)
-@click.option('--disabled', is_flag=True)
+@click.option('--disabled', is_flag=True, help='Include disabled User objects')
 @click.option('-c', '--column', multiple=True, help='''
 Columns desired in the output. If not provided, then "name" will be used.
 Use -c/--column multiple times for multiple columns.
