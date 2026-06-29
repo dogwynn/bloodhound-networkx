@@ -15,6 +15,7 @@ import gzip
 import bz2
 import hashlib
 from collections import Counter
+import tempfile
 
 from toolz.curried import (
     accumulate, apply, assoc, assoc_in, comp,
@@ -139,10 +140,10 @@ def split(sep: Optional[str] = None, value: Optional[str] = None,  maxsplit=-1):
 
 @curry
 def splitlines(value: streamable, keepends=False) -> T.Generator[str]:
-    '''
+    r'''
     In-line string splitlines function. Stream-safe.
-
-    >>> list(splitlines(None, 'a\nb')) == ['a', 'b']
+    
+    >>> list(splitlines('a\nb')) == ['a', 'b']
     True
     >>> pipe('a\nb', splitlines, list) == ['a', 'b']
     True
@@ -158,19 +159,49 @@ def splitlines(value: streamable, keepends=False) -> T.Generator[str]:
                 yield line
 
 def lower(value: str):
-    'In-line string lower function'
+    '''Pipe-able string lower function
+    
+    Example:
+
+    >>> pipe(['A', 'B'], map(lower), list) == ['a', 'b']
+    True
+    '''
     return value.lower()
 
 def upper(value: str):
-    'In-line string upper function'
+    '''Pipe-able string upper function
+    
+    Example:
+
+    >>> pipe(['a', 'b'], map(upper), list) == ['A', 'B']
+    True
+    '''
     return value.upper()
 
 @curry
 def startswith(prefix: Union[str, bytes], string: Union[str, bytes]):
+    '''Pipe-able startswith
+
+    Examples:
+
+    >>> startswith('qw', 'qwer')
+    True
+    >>> pipe(['abc', 'xyz'], filter(startswith('a')), tuple) == ('abc',)
+    True
+    '''
     return string.startswith(prefix)
 
 @curry
 def endswith(prefix: Union[str, bytes], string: Union[str, bytes]):
+    '''Pipe-able endswith
+
+    Examples:
+
+    >>> endswith('er', 'qwer')
+    True
+    >>> pipe(['abc', 'xyz'], filter(endswith('z')), tuple) == ('xyz',)
+    True
+    '''
     return string.endswith(prefix)
 
 def do_slice(start: int, stop: int = None, step: int = None):
@@ -180,7 +211,16 @@ def do_slice(start: int, stop: int = None, step: int = None):
 
 @curry
 def replace(old: str, new: str, value: str, count: int = -1):
-    'In-line string replace'
+    '''Pipe-able string replace
+
+    Examples:
+
+    >>> replace('a', 'b', 'aaa') == 'bbb'
+    True
+    >>> pipe(['asdf', 'bsdf'], map(replace('sdf', 'poo')), tuple) == ('apoo', 'bpoo')
+    True
+    
+    '''
     return value.replace(old, new, count)
 
 # ---------------------------
@@ -230,15 +270,19 @@ def vmap(func: T.Callable, seq: T.Iterable[T.Sequence[T.Any]]):
         map(vcall(func)),
     )
 
+starmap = vmap
+
 @curry
 def map_t(func: T.Callable, values):
+    '''Map function, then convert to tuple
+    '''
+
     return pipe(
         values,
         map(func),
         tuple,
     )
 
-starmap = vmap
 
 @curry
 def mapget(key, seq, *, default=None):

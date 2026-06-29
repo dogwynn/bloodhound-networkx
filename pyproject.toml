@@ -1,6 +1,6 @@
 [project]
 name = "bloodhound-networkx"
-version = "0.0.2"
+version = "0.0.3"
 description = "Tools to ingest BloodHound graph data into NetworkX graph"
 authors = [
     {name = "David O'Gwynn",email = "david_ogwynn@nextstepinnovation.com"}

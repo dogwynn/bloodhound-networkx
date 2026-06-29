@@ -34,7 +34,7 @@ def check_version(data: dict):
     return False
 
 
-def parse_bloodhound_path(path: str | Path):
+def parse_bloodhound_path(path: str | Path) -> T.Iterable[dict]:
     all_data = pipe(
         Path(path).expanduser(),
         json_slurp,
@@ -83,7 +83,13 @@ localgroup_sid_to_edge = {
     '580': 'CanPSRemote',
 }
 
-def object_edges(obj: dict):
+class EdgeDict(T.TypedDict):
+    a: str
+    b: str
+    rel: str
+    meta: dict
+
+def object_edges(obj: dict) -> T.Generator[EdgeDict]:
     this_sid = obj['ObjectIdentifier']
 
     yield {
@@ -163,13 +169,13 @@ def object_edges(obj: dict):
         }
 
 
-def parse_files(json_paths: T.Sequence[str | Path]):
+def parse_files(json_paths: T.Sequence[str | Path]) -> T.Iterable[dict]:
     return pipe(
         json_paths,
         mapcat(parse_bloodhound_path),
     )
 
-def parse_directory(path: str | Path):
+def parse_directory(path: str | Path) -> T.Iterable[dict]:
     path = Path(path).expanduser()
     if not path.exists():
         log.error(
