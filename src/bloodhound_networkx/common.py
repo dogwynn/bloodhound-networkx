@@ -25,5 +25,3 @@ def setup_logging(loglevel: str, **config_kw):
     }, config_kw)
     coloredlogs.install(**kw)
 
-
-

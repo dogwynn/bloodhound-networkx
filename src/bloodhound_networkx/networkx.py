@@ -59,12 +59,14 @@ def to_digraph(bh_elements: T.Iterable[dict]):
             auth_users, everyone, 'MemberOf'
         )
 
-    node_attrs = pipe(
+    node_attrs = merge(pipe(
         bh_elements,
         map(bloodhound.object_properties),
         groupby('sid'),
         valmap(first),
-    )
+    ), {
+        obj_type: {'type': 'node-type'} for obj_type in bloodhound.all_object_types()
+    })
     nx.set_node_attributes(graph, node_attrs)
 
     g_hash = pipe(

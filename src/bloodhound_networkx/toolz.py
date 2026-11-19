@@ -16,6 +16,7 @@ import bz2
 import hashlib
 from collections import Counter
 import tempfile
+import re
 
 from toolz.curried import (
     accumulate, apply, assoc, assoc_in, comp,
@@ -615,3 +616,11 @@ def hash_object(obj: Any, hash_func=md5):
         json_dumps(sort_keys=True),
         hash_func,
     )
+
+def is_regex(obj: str | re.Pattern):
+    return isinstance(obj, re.Pattern)
+
+def to_regex(obj: str | re.Pattern, flags=0):
+    if is_regex(obj):
+        return obj
+    return re.compile(obj, flags)

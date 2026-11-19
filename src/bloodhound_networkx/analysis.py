@@ -2,14 +2,17 @@ import typing as T
 from pathlib import Path
 import pprint
 import hashlib
+import re
 
 import networkx as nx
 
 from .common import new_log
 from .toolz import (
     pipe, json_slurp, merge, mapcat, map, endswith, first, filter, vfilter,
-    curry, concat, concatv, hash_object,
+    curry, concat, concatv, hash_object, is_str, to_regex,
 )
+from . import bloodhound
+from . import networkx
 
 log = new_log(__name__)
 
@@ -120,6 +123,13 @@ def domain_users_to_any_user_paths(G: nx.MultiDiGraph):
         tuple,
     )
 
+def search_users(G: nx.MultiDiGraph, regex: str | re.Pattern):
+    regex = to_regex(regex, re.I)
+    return pipe(
+        all_users(G),
+        filter(lambda u: regex.search(u['name'])),
+    )
+
 Edge = T.Tuple[str, str, str]
 
 @curry
@@ -151,3 +161,49 @@ def node_to_node_with_edge_1(n_type_a: str, n_type_b: str, e_type: str,
     )
 
     return edges
+
+
+def process_json_paths(json_paths_or_dir):
+    paths = []
+    match json_paths_or_dir:
+        case (one_path,):
+            path = Path(one_path)
+            if path.exists() and path.is_dir():
+                paths = tuple(path.glob('*.json'))
+            else:
+                paths = (path,)
+        case many_paths:
+            paths = [Path(p) for p in many_paths]
+    return paths
+
+def json_paths_to_graph(json_paths: T.Iterable[Path]) -> nx.MultiDiGraph:
+    return pipe(
+        json_paths,
+        bloodhound.parse_files,
+        networkx.to_digraph,
+    )
+
+def process_json_or_graph(json_or_graph: T.Sequence[str | Path]) -> nx.MultiDiGraph:
+    if len(json_or_graph) == 1:
+        path = json_or_graph[0]
+        pkl_path = None
+        if str(path).endswith('pkl.gz'):
+            pkl_path = path
+        else:
+            test_path = Path(f'{path}.pkl.gz')
+            if test_path.exists():
+                pkl_path = test_path
+        if pkl_path:
+            return networkx.unpickle_graph(pkl_path)
+
+    return pipe(
+        json_or_graph,
+        process_json_paths,
+        json_paths_to_graph,
+    )
+
+def load_graph(json_or_graph: str | Path | T.Sequence[str | Path]) -> nx.MultiDiGraph:
+    paths = json_or_graph
+    if is_str(json_or_graph):
+        paths = [json_or_graph]
+    return process_json_or_graph(paths)

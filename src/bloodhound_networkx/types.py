@@ -263,7 +263,7 @@ class User(T.TypedDict):
     Aces: T.Sequence[Ace]
     Properties: UserData
 
-class Group(T.TypedData):
+class Group(T.TypedDict):
     Members: list
     Aces: T.Sequence[Ace]
     ObjectIdentifier: str

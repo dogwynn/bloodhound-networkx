@@ -7,44 +7,17 @@ import networkx as nx
 from ..common import new_log
 from ..toolz import (
     pipe, map, vmap, filter, vfilter, compose_left, get, get_in, noop, mapcat, 
-    keys, most_common, sort_by,
+    keys, most_common, sort_by, second,
 )
 from .common import bnx_cli
 from .. import bloodhound
 from .. import networkx
 from .. import analysis
+from ..analysis import (
+    process_json_paths, json_paths_to_graph, process_json_or_graph,
+)
 
 log = new_log(__name__)
-
-def process_json_paths(json_paths_or_dir):
-    paths = []
-    match json_paths_or_dir:
-        case (one_path,):
-            path = Path(one_path)
-            if path.exists() and path.is_dir():
-                paths = tuple(path.glob('*.json'))
-            else:
-                paths = (path,)
-        case many_paths:
-            paths = [Path(p) for p in many_paths]
-    return paths
-
-def json_paths_to_graph(json_paths: T.Iterable[Path]) -> nx.MultiDiGraph:
-    return pipe(
-        json_paths,
-        bloodhound.parse_files,
-        networkx.to_digraph,
-    )
-
-def process_json_or_graph(json_or_graph) -> nx.MultiDiGraph:
-    if len(json_or_graph) == 1 and json_or_graph[0].endswith('pkl.gz'):
-        return networkx.unpickle_graph(json_or_graph[0])
-    else:
-        return pipe(
-            json_or_graph,
-            process_json_paths,
-            json_paths_to_graph,
-        )
 
 @bnx_cli.command(help='''
 Process either a selection of JSON files or a directory containing JSON files. 
@@ -217,5 +190,88 @@ def list_groups(json_or_graph: T.Sequence[str], output_path: str,
         formatter,
         outputter,
     )
+
+
+@bnx_cli.command(help='''
+List the AD Group objects associated with a particular user, based on a required
+regular expression (-u / --user-regex) search for that user. 
+
+Must provide either a path to a persisted graph (from an earlier process call)
+or valid JSON paths/dir. By default, will print to stdout unless
+-o/--output-path is given.
+''')
+@click.argument('json-or-graph', required=True, nargs=-1, type=click.Path(exists=True))
+@click.option(
+    '-u', '--user-regex', help='Regular express for the user/users',
+    required=True,
+)
+@click.option('-o', '--output-path', help='File path to output group data',)
+@click.option('-c', '--column', multiple=True, help='''
+Columns desired in the output. If not provided, then name will be used.
+Use -c/--column multiple times for multiple columns.
+''')
+@click.option('--column-counts', is_flag=True, help='''
+Print to stdout all the columns available for Group objects, with counts of non-zero values
+''')
+@click.option('--columns-all-true', is_flag=True, help='''
+Only print a row if all of its values are "true" (not False, empty, or null/None)
+''')
+def user_groups(json_or_graph: T.Sequence[str], user_regex: str, output_path: str,
+                column: T.Sequence[str], column_counts: bool, 
+                columns_all_true: bool):
+    G: nx.MultiDiGraph = process_json_or_graph(json_or_graph)
+
+    not_empty_filter = filter(lambda t: all(t)) if columns_all_true else noop
+
+    users = analysis.search_users(G, user_regex)
+    all_groups = pipe(
+        users,
+        map(lambda u: (u['name'], pipe(
+            G.out_edges(u['sid']),
+            map(second),
+            map(lambda sid: G.nodes[sid]),
+            filter(lambda n: n['type'] == 'Group'),
+            tuple,
+        ))),
+        tuple,
+    )
+
+    outputter = Path(output_path).write_text if output_path else print
+
+    if column_counts:
+        for name, groups in all_groups:
+            print('-'*60)
+            print(name)
+            print('-'*60)
+            pipe(
+                groups,
+                mapcat(keys),
+                most_common,
+                map(reversed),
+                map(tuple),
+                sort_by(lambda t: (t[0], t[1])),
+                vmap(lambda c, k: f'{c:>5}: {k}'),
+                '\n'.join,
+                outputter,
+            )
+            print()
+        return
+
+    formatter = compose_left(map(map(str)), map('\t'.join),'\n'.join)
+
+    columns = list(column) if column else ['name']
+
+    for name, groups in all_groups:
+        print('-'*60)
+        print(name)
+        print('-'*60)
+        pipe(
+            groups,
+            map(get(columns, default='')),
+            not_empty_filter,
+            filter(None),
+            formatter,
+            outputter,
+        )
 
 

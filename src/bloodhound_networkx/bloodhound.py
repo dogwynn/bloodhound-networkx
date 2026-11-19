@@ -4,7 +4,7 @@ import pprint
 
 from .common import new_log
 from .toolz import (
-    pipe, json_slurp, merge, mapcat, map,
+    pipe, json_slurp, merge, mapcat, map, memoize, concatv,
 )
 
 log = new_log(__name__)
@@ -54,21 +54,27 @@ def parse_bloodhound_path(path: str | Path) -> T.Iterable[dict]:
         map(lambda d: merge(d, {'type': bh_type})),
     )
 
+OBJECT_TYPES = {
+    'aiacas': 'AIACA',
+    'certtemplates': 'CertTemplate',
+    'computers': 'Computer',
+    'containers': 'Container',
+    'domains': 'Domain',
+    'enterprisecas': 'EnterpriseCA',
+    'gpos': 'GPO',
+    'groups': 'Group',
+    'ntauthstores': 'NTAuthStore',
+    'ous': 'OU',
+    'rootcas': 'RootCA',
+    'users': 'User',
+}
+
 def object_type(obj: dict):
-    return {
-        'aiacas': 'AIACA',
-        'certtemplates': 'CertTemplate',
-        'computers': 'Computer',
-        'containers': 'Container',
-        'domains': 'Domain',
-        'enterprisecas': 'EnterpriseCA',
-        'gpos': 'GPO',
-        'groups': 'Group',
-        'ntauthstores': 'NTAuthStore',
-        'ous': 'OU',
-        'rootcas': 'RootCA',
-        'users': 'User',
-    }.get(obj['type'], 'Base')
+    return OBJECT_TYPES.get(obj['type'], 'Base')
+
+@memoize
+def all_object_types():
+    return tuple(concatv(OBJECT_TYPES.values(), ['Base']))
 
 def object_properties(obj: dict):
     return merge(obj['Properties'], {
